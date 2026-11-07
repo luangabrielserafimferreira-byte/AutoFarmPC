@@ -1,0 +1,36 @@
+name: Build PC
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Compilar o exe
+        run: pyinstaller --noconsole --onefile --name AutoFarmFortnite --collect-all rapidocr_onnxruntime autofarm_pc.py
+
+      - name: Autoteste do OCR (nao derruba o build)
+        continue-on-error: true
+        run: |
+          $p = Start-Process -FilePath "dist\AutoFarmFortnite.exe" -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content "$env:APPDATA\AutoFarmFortnite\selftest.txt"
+          if ($p.ExitCode -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoFarmFortnite
+          path: dist/AutoFarmFortnite.exe
