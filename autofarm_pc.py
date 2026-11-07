@@ -72,6 +72,9 @@ LEAVE_TIMEOUT_S = 60.0
 AFTER_EXIT_WAIT_S = 8.0
 MODE_COOLDOWN_S = 1.8
 MODE_MAX_TRIES = 3
+# Ajustes do clique no ícone de Esquadrão, em fração da altura da tela, tentados em ordem até o texto
+# da tela mostrar "Esquadrão". O clique costuma cair à esquerda do ícone, então tenta primeiro para a direita.
+ICON_SWEEP = (0.0, 0.02, 0.04, 0.06, 0.08, 0.10, -0.02, -0.04)
 MENU_COOLDOWN_S = 1.8
 
 # Posições de reserva (fração da tela) usadas só quando o OCR não acha o texto
@@ -193,6 +196,7 @@ class Settings:
         self.ocr_width = 1280   # largura usada no OCR (menor = mais rápido)
         self.capture = "auto"   # auto = janela do Fortnite; monitor = tela inteira
         self.monitor = 1
+        self.icon_dx = 0.0      # ajuste aprendido do clique no ícone de Esquadrão (fração da altura)
         self.keys = {}
 
     def load(self):
@@ -204,7 +208,7 @@ class Settings:
         for k in self.BOOLS:
             if k in d:
                 setattr(self, k, bool(d[k]))
-        for k, cast in (("minutes", float), ("tick", float), ("ocr_width", int), ("monitor", int)):
+        for k, cast in (("minutes", float), ("tick", float), ("ocr_width", int), ("monitor", int), ("icon_dx", float)):
             if k in d:
                 try:
                     setattr(self, k, cast(d[k]))
@@ -218,7 +222,7 @@ class Settings:
     def save(self):
         d = {k: getattr(self, k) for k in self.BOOLS}
         d.update(minutes=self.minutes, tick=self.tick, ocr_width=self.ocr_width,
-                 capture=self.capture, monitor=self.monitor, keys=self.keys)
+                 capture=self.capture, monitor=self.monitor, icon_dx=self.icon_dx, keys=self.keys)
         try:
             with open(config_path(), "w", encoding="utf-8") as f:
                 json.dump(d, f, ensure_ascii=False, indent=2)
@@ -245,6 +249,10 @@ class Bot:
         self.log = log
         self.on_stop = on_stop or (lambda why: None)
         self.matches = 0
+        try:
+            self.icon_dx = float(getattr(cfg, "icon_dx", 0.0) or 0.0)
+        except Exception:
+            self.icon_dx = 0.0
         self.reset(time.time())
 
     def reset(self, now):
@@ -260,6 +268,8 @@ class Bot:
         self.last_mode = 0.0
         self.mode_tries = 0
         self.mode_cfg_taps = 0
+        self.icon_prev = None
+        self.icon_start = None
         self.recap_waits = 0
         self.last_state = ""
 
@@ -392,12 +402,29 @@ class Bot:
                 self.last_mode = now
                 squad_on = find("mode_squad") is not None
                 done = find("mode_done")
-                if not squad_on and self.mode_cfg_taps < 2:
+                confirm = False
+                if squad_on:
+                    if self.mode_cfg_taps > 0:
+                        cfg.icon_dx = self.icon_dx          # acertou: lembra o ajuste para as próximas vezes
+                        self.log("modo: Esquadrão selecionado (ajuste do clique %+.3f)" % self.icon_dx)
+                    self.icon_start = None
+                    confirm = True
+                elif self.mode_cfg_taps < len(ICON_SWEEP):
+                    if self.mode_cfg_taps == 0:
+                        self.icon_start = self.icon_dx
+                    self.icon_dx = max(-0.25, min(0.25, self.icon_start + ICON_SWEEP[self.mode_cfg_taps]))
                     self.mode_cfg_taps += 1
                     x, y = self._squad_icon(items, w, h, done)
-                    self.log("modo: clicando em Esquadrão | lido: %s" % seen)
+                    x += self.icon_dx * h
+                    self.log("modo: clicando em Esquadrão (toque %d, ajuste %+.3f) | lido: %s"
+                             % (self.mode_cfg_taps, self.icon_dx, seen))
                     self.io.click(x, y)
                 else:
+                    if self.icon_start is not None:         # não deu certo: desfaz o ajuste
+                        self.icon_dx = self.icon_start
+                        self.icon_start = None
+                    confirm = True
+                if confirm:
                     self.mode_cfg_taps = 0
                     self.log("modo: confirmando (DONE)")
                     if done is not None:
