@@ -32,20 +32,28 @@ GAME_TITLE = "Fortnite"          # título da janela do jogo (sem espaços nas p
 # ----------------------------------------------------------------------------
 DEFAULT_KEYS = {
     "play": "JOGAR,INICIAR,PLAY",
-    "searching": "LOCALIZANDO,CANCELAR,LOCATING,FINDING,CANCEL",
-    "dead": "ESQUADRAO ELIMINADO,SQUAD ELIMINATED,TEAM ELIMINATED,MATCH RECAP,YOU PLACED,RESUMO DA PARTIDA",
-    "recap": "MATCH RECAP,YOU PLACED,MATCH STATS,RESUMO DA PARTIDA",
+    "searching": "LOCALIZANDO,PROCURANDO,CANCELAR,LOCATING,FINDING,CANCEL",
+    "dead": "ESQUADRAO ELIMINADO,EQUIPE ELIMINADA,RESUMO DA PARTIDA,ESTATISTICAS DA PARTIDA,VOCE FICOU EM,VOCE TERMINOU EM,SQUAD ELIMINATED,TEAM ELIMINATED,MATCH RECAP,YOU PLACED",
+    "recap": "RESUMO DA PARTIDA,ESTATISTICAS DA PARTIDA,VOCE FICOU EM,VOCE TERMINOU EM,MATCH RECAP,YOU PLACED,MATCH STATS",
+    "again": "JOGAR NOVAMENTE,JOGAR DE NOVO,PLAY AGAIN",
     "cont": "CONTINUAR,CONTINUE",
-    "exit": "RETURN TO LOBBY,RETORNAR AO LOBBY,VOLTAR AO LOBBY,LEAVE MATCH,SAIR DA PARTIDA,CONFIRM,CONFIRMAR,LEAVE,SAIR",
+    "exit": "CONFIRMAR,VOLTAR AO LOBBY,RETORNAR AO LOBBY,SAIR PARA O LOBBY,VOLTAR PARA O LOBBY,RETORNAR PARA O LOBBY,SAIR DA PARTIDA,ABANDONAR PARTIDA,SAIR,CONFIRM,RETURN TO LOBBY,LEAVE MATCH,LEAVE",
     "mode_squad": "ESQUADRAO,ESQUADRA,ESQUADR,SQUAD",
-    "mode_size": "SOLO,DUO,DUOS,DUPLA,DUPLAS,TRIO,TRIOS,ESQUADRAO,ESQUADR,SQUAD",
-    "mode_card": "TROCACAO,CONSTRUCAO,SOLO,DUPLA,DUPLAS,DUO,DUOS,TRIO,TRIOS,ESQUADRAO,SQUAD,FILL,BUILD",
-    "mode_cfg": "MODO RANQUEADO,RANKED,TEAM FILL,GIZMOS,TEAM SIZE,TAMANHO DA",
-    "mode_done": "DONE,CONCLUIDO,PRONTO",
+    "mode_size": "SOLO,DUPLA,DUPLAS,DUO,DUOS,TRIO,TRIOS,ESQUADRAO,ESQUADR,SQUAD",
+    "mode_card": "TROCACAO,CONSTRUCAO,SOLO,DUPLA,DUPLAS,TRIO,TRIOS,ESQUADRAO,PREENCH,COMPLETAR,FILL,BUILD",
+    "mode_cfg": "MODO RANQUEADO,TAMANHO DA,PREENCHER EQUIPE,COMPLETAR EQUIPE,PREENCHIMENTO DE EQUIPE,RANKED,TEAM FILL,GIZMOS,TEAM SIZE",
+    "mode_done": "CONCLUIDO,PRONTO,CONCLUIR,DONE",
+    # Tesouros: "ACESSO DESBLOQUEADO À LOJA PIRATA" (RESGATAR TUDO) e "TESOURO ENCONTRADO" (RESGATAR)
+    "claim_all": "RESGATAR TUDO,RESGATAR TODOS,CLAIM ALL",
+    "claim": "RESGATAR,CLAIM",
+    "treasure": "TESOURO ENCONTRADO,ACESSO DESBLOQUEADO,TREASURE FOUND,ACCESS UNLOCKED",
+    "pirate": "LOJA PIRATA,PIRATE STORE,PIRATE SHOP",
 }
-# Sempre somados aos textos salvos
-EXTRA_KEYS = {
-    "exit": "RETORNAR AO LOBBY,RETORNAR PARA O LOBBY,VOLTAR PARA O LOBBY",
+EXTRA_KEYS = {   # sempre somados aos textos salvos (valem mesmo para quem já salvou os campos)
+    "exit": "VOLTAR AO LOBBY,RETORNAR AO LOBBY,SAIR PARA O LOBBY,VOLTAR PARA O LOBBY,RETORNAR PARA O LOBBY,SAIR DA PARTIDA",
+    "again": "JOGAR NOVAMENTE,JOGAR DE NOVO",
+    "recap": "RESUMO DA PARTIDA,ESTATISTICAS DA PARTIDA,VOCE FICOU EM,VOCE TERMINOU EM",
+    "mode_done": "CONCLUIDO,PRONTO,CONCLUIR",
 }
 # Campos editáveis na tela (rótulo)
 KEY_LABELS = {
@@ -53,6 +61,7 @@ KEY_LABELS = {
     "searching": "Procurando partida",
     "dead": "Esquadrão eliminado / resumo",
     "recap": "Tela de resumo da partida",
+    "again": "Botão Jogar novamente",
     "cont": "Botão CONTINUAR",
     "exit": "Sair (Return to lobby / confirmar)",
     "mode_squad": "Tamanho Esquadrão",
@@ -69,7 +78,11 @@ AFK_S = 30.0
 BEAT_S = 45.0
 PLAY_COOLDOWN_S = 15.0
 LEAVE_TIMEOUT_S = 60.0
+# Textos que nunca devem ser clicados ao sair da partida (fechariam o jogo inteiro)
+EXIT_BLOCK = ("QUIT", "SAIR DO JOGO", "EXIT GAME", "DESKTOP", "AREA DE TRABALHO")
 AFTER_EXIT_WAIT_S = 8.0
+CLAIM_COOLDOWN_S = 3.0        # entre toques em RESGATAR
+NOTIFY_COOLDOWN_S = 20.0      # mínimo entre avisos de tesouro (evita repetir se o clique falhar)
 MODE_COOLDOWN_S = 1.8
 MODE_MAX_TRIES = 3
 # Ajustes do clique no ícone de Esquadrão, em fração da altura da tela, tentados em ordem até o texto
@@ -141,6 +154,15 @@ def has_key(text, key, fuzzy):
     return False
 
 
+def ocr_scale(w, ocr_width):
+    """Escala do OCR: reduz telas grandes e AMPLIA janelas pequenas (texto miúdo não é lido direito)."""
+    if not w:
+        return 1.0
+    if w >= ocr_width:
+        return float(ocr_width) / float(w)
+    return min(3.0, max(1.0, 1600.0 / float(w)))
+
+
 @dataclass
 class Hit:
     text: str
@@ -197,6 +219,7 @@ class Settings:
         self.capture = "auto"   # auto = janela do Fortnite; monitor = tela inteira
         self.monitor = 1
         self.icon_dx = 0.0      # ajuste aprendido do clique no ícone de Esquadrão (fração da altura)
+        self.ntfy = ""          # tópico do ntfy.sh para avisar no celular (vazio = só som/log)
         self.keys = {}
 
     def load(self):
@@ -214,6 +237,8 @@ class Settings:
                     setattr(self, k, cast(d[k]))
                 except Exception:
                     pass
+        if isinstance(d.get("ntfy"), str):
+            self.ntfy = d["ntfy"].strip()
         if d.get("capture") in ("auto", "monitor"):
             self.capture = d["capture"]
         if isinstance(d.get("keys"), dict):
@@ -222,7 +247,7 @@ class Settings:
     def save(self):
         d = {k: getattr(self, k) for k in self.BOOLS}
         d.update(minutes=self.minutes, tick=self.tick, ocr_width=self.ocr_width,
-                 capture=self.capture, monitor=self.monitor, icon_dx=self.icon_dx, keys=self.keys)
+                 capture=self.capture, monitor=self.monitor, icon_dx=self.icon_dx, ntfy=self.ntfy, keys=self.keys)
         try:
             with open(config_path(), "w", encoding="utf-8") as f:
                 json.dump(d, f, ensure_ascii=False, indent=2)
@@ -248,6 +273,7 @@ class Bot:
         self.io = io
         self.log = log
         self.on_stop = on_stop or (lambda why: None)
+        self.notify = lambda title, body, urgent=False: None   # o Worker troca por um aviso de verdade
         self.matches = 0
         try:
             self.icon_dx = float(getattr(cfg, "icon_dx", 0.0) or 0.0)
@@ -270,6 +296,16 @@ class Bot:
         self.mode_cfg_taps = 0
         self.icon_prev = None
         self.icon_start = None
+        self._icon_src = ""
+        self.exit_tried = set()
+        self.treasures = 0
+        self.last_treasure = ""
+        self._last_claim_name = ""
+        self.done_miss = 0
+        self.last_claim = 0.0
+        self.last_notify = 0.0
+        self.want_debug = False
+        self.menu_debug_done = False
         self.recap_waits = 0
         self.last_state = ""
 
@@ -290,27 +326,32 @@ class Bot:
         self.last_menu = 0.0
         self.last_exit = 0.0
         self.recap_waits = 0
+        self.exit_tried = set()
         self.log("saindo da partida (%s)" % why)
 
     def handle(self, items, w, h, now, seen=""):
         cfg = self.cfg
 
-        def match(name, lst, min_y=0.0):
-            fuzzy = name in ("exit", "mode_cfg")
+        def match(name, lst, min_y=0.0, skip=None):
+            fuzzy = name in ("exit", "mode_cfg", "claim_all", "treasure", "pirate")
             sub = name in ("mode_squad", "mode_card", "mode_size")
             for k in cfg.keys_for(name):
                 m = [it for it in lst
                      if it.cy >= min_y and ((k in it.text) if sub else has_key(it.text, k, fuzzy))]
+                if name == "exit":
+                    m = [it for it in m if not any(b in it.text for b in EXIT_BLOCK)]
+                if skip:
+                    m = [it for it in m if (int(it.cx // 15), int(it.cy // 15)) not in skip]
                 if m:
                     return min(m, key=lambda it: it.area)
             return None
 
-        def find(name, min_y=0.0):
-            return match(name, items, min_y)
+        def find(name, min_y=0.0, skip=None):
+            return match(name, items, min_y, skip)
 
         def count_keys(name):
             """Quantos textos diferentes da lista aparecem na tela (para telas com vários rótulos)."""
-            fuzzy = name in ("exit", "mode_cfg")
+            fuzzy = name in ("exit", "mode_cfg", "claim_all", "treasure", "pirate")
             n = 0
             for k in cfg.keys_for(name):
                 if any(has_key(it.text, k, fuzzy) for it in items):
@@ -318,7 +359,7 @@ class Bot:
             return n
 
         def press(hit, what):
-            self.log("clique: %s [%s]" % (what, hit.text))
+            self.log("clique: %s [%s] em (%d,%d) de %dx%d" % (what, hit.text, hit.cx, hit.cy, w, h))
             self.io.click(hit.cx, hit.cy)
 
         # Batimento no log
@@ -326,6 +367,37 @@ class Bot:
             self.last_beat = now
             left = int(cfg.minutes * 60 - (now - self.last_queue))
             self.log("[%s] faltam %ds | lido: %s" % (self.last_state, left, seen))
+
+        # 0) Tesouros.
+        #    Token da Loja Pirata (RESGATAR TUDO): NÃO clica; pausa o farm e avisa.
+        #    Outros tesouros (RESGATAR): avisa qual foi, resgata e continua puxando partidas.
+        claim_all = find("claim_all")
+        claim_one = match("claim", [it for it in items if "TUDO" not in it.text and "ALL" not in it.text])
+        pirate = find("pirate") is not None
+        header = find("treasure") is not None
+        if claim_all is not None or (pirate and (header or claim_one is not None)):
+            self._state("Loja Pirata", seen)
+            self.notify("LOJA PIRATA desbloqueada!",
+                        "Apareceu o token da Loja Pirata. O farm foi pausado: resgate você mesmo.", True)
+            self.on_stop("LOJA PIRATA! Resgate o token você mesmo e depois inicie o farm de novo.")
+            return
+        if claim_one is not None:
+            bottom = 0.35 * w < claim_one.cx < 0.65 * w and claim_one.cy > 0.78 * h   # RESGATAR embaixo, no centro
+            if header or bottom:
+                self._state("tesouro", seen)
+                if now - self.last_claim < CLAIM_COOLDOWN_S:
+                    return
+                self.last_claim = now
+                name = self._treasure_name(items, w, h)
+                if name != self._last_claim_name or now - self.last_notify > NOTIFY_COOLDOWN_S:
+                    self._last_claim_name = name
+                    self.last_notify = now
+                    self.treasures += 1
+                    self.last_treasure = name
+                    self.log("TESOURO RESGATADO: %s" % name)
+                    self.notify("Tesouro resgatado", name, False)
+                press(claim_one, "resgatar tesouro #%d" % self.treasures)
+                return
 
         # Lobby de verdade: botão JOGAR na coluna da esquerda
         left_items = [it for it in items if it.cx < w * 0.30]
@@ -343,9 +415,12 @@ class Bot:
 
         # 3) Saindo da partida
         if self.leaving:
-            ex = find("exit")
-            if ex is None and cfg.cont:
-                ex = find("cont")
+            ex = find("exit", skip=self.exit_tried)
+            if ex is None and self.exit_tried and find("exit") is not None:
+                self.exit_tried.clear()         # já tentou todos os candidatos: recomeça
+                ex = find("exit")
+            if ex is None and cfg.cont and self.leave_step == 0:
+                ex = find("cont", skip=self.exit_tried)   # no máximo 1 vez por tentativa (no menu do ESC, "Continuar" fecha o menu)
             if now - self.leave_start > LEAVE_TIMEOUT_S:
                 self._start_leaving("nova tentativa", now)
                 return
@@ -355,29 +430,44 @@ class Bot:
                 if ex is not None:
                     self.last_exit = now
                     self.recap_waits = 0
+                    self.exit_tried.add((int(ex.cx // 15), int(ex.cy // 15)))
                     press(ex, "sair")
                     return
                 if now - self.last_exit < AFTER_EXIT_WAIT_S:
                     return                      # espera o lobby carregar
                 if find("recap") is not None:
-                    # Tela de resumo: o botão deve aparecer; se o OCR não achar, clica na posição conhecida
+                    # Tela de resumo: só clica no que o OCR leu (Return to lobby; ou Play again como alternativa)
                     self.recap_waits += 1
-                    if self.recap_waits >= 4:
+                    if self.recap_waits >= 3:
                         self.recap_waits = 0
-                        self.log("clique: Return to lobby (posição fixa) | lido: %s" % seen)
-                        self.io.click(w * RECAP_EXIT_X, h * RECAP_EXIT_Y)
+                        ag = find("again")
+                        if ag is not None:
+                            self.leaving = False
+                            self.matches += 1
+                            self.last_queue = now
+                            self.last_play = now
+                            press(ag, "jogar novamente (não li o Return to lobby) #%d" % self.matches)
+                        else:
+                            self.log("não li Return to lobby nem Play again | lido: %s" % seen)
+                            if not self.menu_debug_done:
+                                self.menu_debug_done = True
+                                self.want_debug = True
                     return
                 if now - self.last_menu > MENU_COOLDOWN_S:
                     self.last_menu = now
                     if self.leave_step == 0:
                         self.log("tecla: ESC (abre o menu) | lido: %s" % seen)
-                        self.io.key(SC_ESC)
+                        self.io.key(SC_ESC, 0.12)
                         self.leave_step = 1
                     elif self.leave_step in (1, 2):
                         self.leave_step += 1     # espera o OCR achar o botão de sair
+                        self.log("menu aberto? procurando o botão de sair | lido: %s" % seen)
                     else:
-                        self.log("tecla: ESC (fecha o menu e tenta de novo) | lido: %s" % seen)
-                        self.io.key(SC_ESC)
+                        self.log("não achei o botão de sair, ESC de novo (fecha o menu e tenta outra vez) | lido: %s" % seen)
+                        if not self.menu_debug_done:
+                            self.menu_debug_done = True
+                            self.want_debug = True
+                        self.io.key(SC_ESC, 0.12)
                         self.leave_step = 0
                 return
 
@@ -416,8 +506,8 @@ class Bot:
                     self.mode_cfg_taps += 1
                     x, y = self._squad_icon(items, w, h, done)
                     x += self.icon_dx * h
-                    self.log("modo: clicando em Esquadrão (toque %d, ajuste %+.3f) | lido: %s"
-                             % (self.mode_cfg_taps, self.icon_dx, seen))
+                    self.log("modo: clicando em Esquadrão (toque %d, ajuste %+.3f, base: %s, x=%d y=%d, tela %dx%d) | lido: %s"
+                             % (self.mode_cfg_taps, self.icon_dx, self._icon_src, x, y, w, h, seen))
                     self.io.click(x, y)
                 else:
                     if self.icon_start is not None:         # não deu certo: desfaz o ajuste
@@ -426,11 +516,17 @@ class Bot:
                     confirm = True
                 if confirm:
                     self.mode_cfg_taps = 0
-                    self.log("modo: confirmando (DONE)")
                     if done is not None:
+                        self.done_miss = 0
+                        self.log("modo: confirmando (DONE)")
                         self.io.click(done.cx, done.cy)
                     else:
-                        self.io.click(w * DONE_X, h * DONE_Y)
+                        self.done_miss += 1
+                        self.log("modo: não li o botão DONE (%d) | lido: %s" % (self.done_miss, seen))
+                        if self.done_miss >= 2:
+                            self.done_miss = 0
+                            self.log("modo: fechando a configuração com ESC")
+                            self.io.key(SC_ESC, 0.12)
                 return
             self.mode_cfg_taps = 0
             if lobby_play is not None:
@@ -445,13 +541,13 @@ class Bot:
                         self.on_stop("não consegui colocar em Esquadrão | lido: %s" % seen)
                         return
                     self.last_mode = now
-                    self.mode_tries += 1
                     card = match("mode_card", panel, h * 0.50)
-                    self.log("modo: abrindo a configuração (tentativa %d)" % self.mode_tries)
                     if card is not None and card.cy < h * 0.82:
+                        self.mode_tries += 1
+                        self.log("modo: abrindo a configuração (tentativa %d)" % self.mode_tries)
                         self.io.click(card.cx, card.cy)
                     else:
-                        self.io.click(w * MODE_CARD_X, h * MODE_CARD_Y)
+                        self.log("modo: não li o resumo do modo no lobby, não vou chutar posição | lido: %s" % seen)
                     return
 
         # 6) Lobby: puxa partida (ignora o JOGAR do menu do topo)
@@ -473,6 +569,19 @@ class Bot:
             self.log("anti-AFK")
             self.io.hold_key(SC_W, 0.7)
 
+    def _treasure_name(self, items, w, h):
+        """Nome do tesouro: o texto maior do lado direito da tela, mais o tipo que fica logo acima."""
+        c = [it for it in items if it.cx > w * 0.55 and h * 0.12 < it.cy < h * 0.55 and len(it.text) > 2]
+        if not c:
+            return "tesouro"
+        best = max(c, key=lambda it: it.y2 - it.y1)
+        name = best.text.capitalize()
+        bh = best.y2 - best.y1
+        above = [it for it in c if it is not best and it.cy < best.cy and best.cy - it.cy < bh * 2.5]
+        if above:
+            name += " (%s)" % max(above, key=lambda it: it.cy).text.capitalize()
+        return name
+
     def _squad_icon(self, items, w, h, done):
         """Acha o ícone de Esquadrão (4º ícone de Tamanho da Equipe)."""
         keys = self.cfg.keys_for("mode_size")
@@ -480,9 +589,12 @@ class Bot:
                  if it.cx > w * 0.40 and h * 0.30 < it.cy < h * 0.65 and any(k in it.text for k in keys)]
         if cands:
             v = min(cands, key=lambda it: it.x1)       # valor atual (ex.: ESQUADRAO), alinhado à esquerda
+            self._icon_src = "texto '%s' em x=%d" % (v.text[:12], v.x1)
             return v.x1 + 0.484 * h, v.cy - 0.028 * h
         if done is not None:
+            self._icon_src = "botão DONE"
             return done.cx + 0.053 * h, done.cy - 0.50 * h
+        self._icon_src = "posição fixa"
         return w * SQUAD_X, h * SQUAD_Y
 
 
@@ -525,6 +637,7 @@ if IS_WIN:
     user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
     user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
     user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
+    user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
     user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
     _ENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     user32.EnumWindows.argtypes = [_ENUMPROC, wintypes.LPARAM]
@@ -608,6 +721,8 @@ class WinIO:
     def __init__(self):
         self.origin = (0, 0)
         self.hwnd = None
+        self.warn = None            # função de log (preenchida pelo Worker)
+        self._warned = False
 
     def _focus(self):
         if self.hwnd:
@@ -618,6 +733,15 @@ class WinIO:
         sx, sy = int(self.origin[0] + x), int(self.origin[1] + y)
         user32.SetCursorPos(sx, sy)
         time.sleep(0.10)
+        try:
+            pt = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(pt))
+            if (abs(pt.x - sx) > 2 or abs(pt.y - sy) > 2) and self.warn and not self._warned:
+                self._warned = True
+                self.warn("ATENÇÃO: pedi o mouse em (%d,%d) mas o Windows colocou em (%d,%d). "
+                          "Problema de escala da tela: me mande esta linha." % (sx, sy, pt.x, pt.y))
+        except Exception:
+            pass
         _mouse_event(0x0001, 1, 0)       # pequeno movimento: o jogo registra o "hover"
         _mouse_event(0x0001, -1, 0)
         time.sleep(0.08)
@@ -691,14 +815,41 @@ class Worker(threading.Thread):
         self.mask_rect = None          # (x, y, w, h) da janela deste app na tela
         self.debug_request = False
         self.io = WinIO()
+        self.io.warn = self.log
         self.bot = Bot(cfg, self.io, self.log, on_stop=self._auto_stop)
+        self.bot.notify = self.notify
         self.auto_stopped = False
+        self.stop_reason = ""
         self._last_black = 0.0
 
     def log(self, msg):
         self.logq.put(time.strftime("%H:%M:%S") + "  " + msg)
 
+    def notify(self, title, body, urgent=False):
+        """Aviso de tesouro: Log e (se houver tópico) push no celular pelo ntfy.sh."""
+        self.log("NOTIFICAÇÃO: %s - %s" % (title, body))
+        topic = (self.cfg.ntfy or "").strip()
+        if topic:
+            threading.Thread(target=self._push, args=(topic, title, body, urgent), daemon=True).start()
+
+    def _push(self, topic, title, body, urgent):
+        try:
+            import urllib.request
+            import urllib.parse
+            safe = lambda t: t.encode("ascii", "ignore").decode("ascii")   # cabeçalhos HTTP só aceitam ASCII
+            req = urllib.request.Request(
+                "https://ntfy.sh/" + urllib.parse.quote(topic, safe=""),
+                data=body.encode("utf-8"),
+                headers={"Title": safe(title), "Priority": "5" if urgent else "3",
+                         "Tags": "pirate_flag" if urgent else "gift"},
+                method="POST")
+            urllib.request.urlopen(req, timeout=10).read()
+            self.log("aviso enviado ao celular (ntfy)")
+        except Exception as e:
+            self.log("falha ao enviar o aviso ao celular: %s" % e)
+
     def _auto_stop(self, why):
+        self.stop_reason = why
         self.running = False
         self.auto_stopped = True
         self.log("PAUSADO: " + why)
@@ -732,12 +883,18 @@ class Worker(threading.Thread):
             ocr = Ocr()
             cap = Capture()
             self.ready = True
-            self.log("Pronto. Clique em INICIAR ou pressione F6. Deixe o Fortnite em primeiro plano.")
+            self.log("Pronto. Clique em INICIAR ou pressione F6. Deixe o Fortnite em primeiro plano. F7 salva um debug.")
         except Exception:
             self.log("ERRO ao iniciar o OCR/captura:\n" + traceback.format_exc())
             return
         while not self.stop_flag:
             if not self.running:
+                if self.debug_request:
+                    try:
+                        self._debug_only(ocr, cap, np)
+                    except Exception:
+                        self.debug_request = False
+                        self.log("erro ao salvar o debug: " + traceback.format_exc().strip().splitlines()[-1])
                 time.sleep(0.2)
                 continue
             t0 = time.time()
@@ -763,20 +920,43 @@ class Worker(threading.Thread):
         if img.mean() < 3 and time.time() - self._last_black > 60:
             self._last_black = time.time()
             self.log("A captura está preta. No Fortnite use o modo de janela 'Tela cheia em janela'.")
-        scale = min(1.0, float(self.cfg.ocr_width) / float(w)) if w else 1.0
+        scale = ocr_scale(w, self.cfg.ocr_width)
         small = img
-        if scale < 1.0:
+        if abs(scale - 1.0) > 0.01:
             from PIL import Image
             small = np.array(Image.fromarray(img).resize((max(1, int(w * scale)), max(1, int(h * scale))),
-                                                         Image.BILINEAR))
+                                                         Image.LANCZOS if scale > 1.0 else Image.BILINEAR))
         raw = ocr.read(small)
         items = [Hit(norm(t), x1 / scale, y1 / scale, x2 / scale, y2 / scale) for (t, x1, y1, x2, y2) in raw]
-        seen = " | ".join(t for (t, _a, _b, _c, _d) in raw)[:140]
+        seen = " | ".join(t for (t, _a, _b, _c, _d) in raw)[:420]
         if self.debug_request:
             self.debug_request = False
             self._save_debug(img, raw, scale)
         self.io.origin = (region[0], region[1])
         self.bot.handle(items, w, h, time.time(), seen)
+        if self.bot.want_debug:
+            self.bot.want_debug = False
+            self._save_debug(img, raw, scale)
+
+    def _debug_only(self, ocr, cap, np):
+        """Salva print + texto lido mesmo com o farm pausado (atalho F7)."""
+        self.debug_request = False
+        region = self._region(cap)
+        img = cap.grab(region)
+        h, w = img.shape[:2]
+        mr = self.mask_rect
+        if mr:
+            x0, y0 = max(0, int(mr[0] - region[0])), max(0, int(mr[1] - region[1]))
+            x1, y1 = min(w, int(mr[0] + mr[2] - region[0])), min(h, int(mr[1] + mr[3] - region[1]))
+            if x1 > x0 and y1 > y0:
+                img[y0:y1, x0:x1] = 0
+        scale = ocr_scale(w, self.cfg.ocr_width)
+        small = img
+        if abs(scale - 1.0) > 0.01:
+            from PIL import Image
+            small = np.array(Image.fromarray(img).resize((max(1, int(w * scale)), max(1, int(h * scale))),
+                                                         Image.LANCZOS if scale > 1.0 else Image.BILINEAR))
+        self._save_debug(img, ocr.read(small), scale)
 
     def _save_debug(self, img, raw, scale):
         try:
@@ -907,6 +1087,9 @@ def run_gui():
     next_lbl = stat_box(1, "PRÓXIMA SAÍDA")
     next_lbl.config(text="—", fg=MUTED)
 
+    treasure_lbl = tk.Label(st, text="Tesouros resgatados: 0", bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w")
+    treasure_lbl.pack(fill="x", padx=S(14), pady=(0, S(12)))
+
     # ---- Botão iniciar/parar
     state = {"adv": False}
 
@@ -915,12 +1098,12 @@ def run_gui():
             start_btn.config(text="■   PARAR", bg=RED_BTN, activebackground="#ef5454")
             dot.itemconfig(dot_id, fill=GREEN, outline=GREEN)
             status_lbl.config(text="  RODANDO", fg=GREEN)
-            sub_lbl.config(text="Deixe o Fortnite em primeiro plano. F6 pausa.")
+            sub_lbl.config(text="Deixe o Fortnite em primeiro plano. F6 pausa.", fg=MUTED)
         else:
             start_btn.config(text="▶   INICIAR", bg=GREEN, activebackground=GREEN_HOVER)
             dot.itemconfig(dot_id, fill=RED, outline=RED)
             status_lbl.config(text="  PAUSADO", fg=RED)
-            sub_lbl.config(text="Clique em INICIAR (no lobby ou já na partida)")
+            sub_lbl.config(text="Clique em INICIAR (no lobby ou já na partida)", fg=MUTED)
 
     def toggle():
         if not worker.ready:
@@ -1033,6 +1216,13 @@ def run_gui():
         Toggle(r, v_cap).pack(side="right")
         tk.Label(r, text="Capturar só a janela do Fortnite (desligado = tela inteira)", bg=CARD, fg=TEXT,
                  font=(FONT, 9)).pack(side="left")
+        r2 = tk.Frame(adv, bg=CARD)
+        r2.pack(fill="x", padx=S(12), pady=S(4))
+        tk.Label(r2, text="Aviso no celular (tópico do ntfy)", bg=CARD, fg=TEXT, font=(FONT, 9)).pack(side="left")
+        v_ntfy = tk.StringVar(value=cfg.ntfy)
+        num_vars["ntfy"] = v_ntfy
+        tk.Entry(r2, textvariable=v_ntfy, width=26, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat",
+                 highlightbackground=BORDER, highlightthickness=1).pack(side="right")
         btns = tk.Frame(adv, bg=CARD)
         btns.pack(fill="x", padx=S(12), pady=(S(6), S(12)))
 
@@ -1044,14 +1234,19 @@ def run_gui():
         def debug():
             if not worker.ready:
                 return
-            if not worker.running:
-                log_line("Inicie o farm para salvar um debug (ele salva a próxima captura).")
             worker.debug_request = True
 
         if SHOW_TEXT_EDITOR:
             tk.Button(btns, text="Restaurar textos", command=restore, bg="#232830", fg=TEXT, relief="flat",
                       activebackground="#2d333d", activeforeground=TEXT, font=(FONT, 9), cursor="hand2").pack(
                 side="left", ipadx=S(8), ipady=S(3))
+        def test_notify():
+            apply_settings()
+            worker.notify("Teste", "Se voce viu isto, o aviso esta funcionando.", False)
+
+        tk.Button(btns, text="Testar aviso", command=test_notify, bg="#232830", fg=TEXT, relief="flat",
+                  activebackground="#2d333d", activeforeground=TEXT, font=(FONT, 9), cursor="hand2").pack(
+            side="left", ipadx=S(8), ipady=S(3))
         tk.Button(btns, text="Salvar debug (print + texto lido)", command=debug, bg="#232830", fg=TEXT,
                   relief="flat", activebackground="#2d333d", activeforeground=TEXT, font=(FONT, 9),
                   cursor="hand2").pack(side="left", padx=S(8), ipadx=S(8), ipady=S(3))
@@ -1118,6 +1313,8 @@ def run_gui():
                 except Exception:
                     pass
             cfg.capture = "auto" if num_vars["cap"].get() else "monitor"
+            if "ntfy" in num_vars:
+                cfg.ntfy = num_vars["ntfy"].get().strip()
         cfg.save()
 
     # ---- Atualização periódica
@@ -1135,6 +1332,7 @@ def run_gui():
         if worker.auto_stopped and not prev["auto_stop"]:
             prev["auto_stop"] = True
             set_ui_running(False)
+            sub_lbl.config(text=worker.stop_reason or "Pausado", fg=YELLOW)
             try:
                 root.deiconify()
             except Exception:
@@ -1142,6 +1340,10 @@ def run_gui():
         if not worker.auto_stopped:
             prev["auto_stop"] = False
         matches_lbl.config(text=str(worker.bot.matches))
+        tb = worker.bot
+        treasure_lbl.config(
+            text="Tesouros resgatados: %d%s" % (tb.treasures, ("  ·  último: " + tb.last_treasure) if tb.last_treasure else ""),
+            fg=YELLOW if tb.treasures else MUTED)
         left = worker.bot.seconds_to_exit(time.time()) if worker.running else None
         if left is None:
             next_lbl.config(text="—", fg=MUTED)
@@ -1153,6 +1355,11 @@ def run_gui():
             if down and not prev["f6"]:
                 toggle()
             prev["f6"] = down
+            down7 = hotkey_down(0x76)
+            if down7 and not prev.get("f7") and worker.ready:
+                worker.debug_request = True
+                log_line("F7: salvando print + texto lido...")
+            prev["f7"] = down7
         # área deste app (o OCR ignora essa região)
         try:
             if root.state() == "normal":
