@@ -390,7 +390,8 @@ class Bot:
                 m = [it for it in lst
                      if it.cy >= min_y and ((k in it.text) if sub else has_key(it.text, k, fuzzy))]
                 if name == "exit":
-                    m = [it for it in m if not any(b in it.text for b in EXIT_BLOCK)]
+                    # botões têm texto curto; frases de aviso ("...se você sair da partida atual...") não são botões
+                    m = [it for it in m if len(it.text) <= 30 and not any(b in it.text for b in EXIT_BLOCK)]
                 if skip:
                     m = [it for it in m if (int(it.cx // 15), int(it.cy // 15)) not in skip]
                 if m:
