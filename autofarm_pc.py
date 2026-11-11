@@ -81,6 +81,7 @@ LEAVE_TIMEOUT_S = 60.0
 # Textos que nunca devem ser clicados ao sair da partida (fechariam o jogo inteiro)
 EXIT_BLOCK = ("QUIT", "SAIR DO JOGO", "EXIT GAME", "DESKTOP", "AREA DE TRABALHO")
 AFTER_EXIT_WAIT_S = 8.0
+BURGER_COOLDOWN_S = 1.5       # entre cliques nas 3 barrinhas
 CLAIM_COOLDOWN_S = 3.0        # entre toques em RESGATAR
 NOTIFY_COOLDOWN_S = 20.0      # mínimo entre avisos de tesouro (evita repetir se o clique falhar)
 MODE_COOLDOWN_S = 1.8
@@ -161,6 +162,51 @@ def ocr_scale(w, ocr_width):
     if w >= ocr_width:
         return float(ocr_width) / float(w)
     return min(3.0, max(1.0, 1600.0 / float(w)))
+
+
+def find_hamburgers(img):
+    """Acha ícones de 3 barras horizontais brancas (botão de menu) no canto superior direito.
+    Usa só a imagem (nada de posição estimada). Devolve [(cx, cy, largura)] da direita para a esquerda."""
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return []
+    h, w = img.shape[:2]
+    x0, y1 = int(w * 0.50), int(h * 0.55)
+    roi = img[0:y1, x0:w]
+    mx = roi.max(axis=2).astype(np.int16)
+    mn = roi.min(axis=2).astype(np.int16)
+    mask = ((mn > 205) & ((mx - mn) < 50)).astype(np.uint8)       # branco quase puro
+    n, _lab, stats, _c = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    bars = []
+    for i in range(1, n):
+        x, y, bw, bh, area = [int(v) for v in stats[i]]
+        if not (0.010 * h <= bw <= 0.075 * h):
+            continue
+        if not (max(2, 0.003 * h) <= bh <= 0.024 * h):
+            continue
+        if bw < 2.5 * bh or area < 0.6 * bw * bh:                  # barra cheia e comprida
+            continue
+        bars.append((x, y, bw, bh))
+    out = []
+    for a in bars:
+        col = sorted((b for b in bars if b[1] > a[1] and abs(b[0] - a[0]) <= 0.2 * a[2]
+                      and abs(b[2] - a[2]) <= 0.2 * a[2]), key=lambda b: b[1])
+        for b in col:
+            gap = b[1] - a[1]
+            if gap < 0.9 * a[3] or gap > 5 * a[3] + 0.02 * h:
+                continue
+            c = next((c for c in col if c[1] > b[1] and abs((c[1] - b[1]) - gap) <= 0.35 * gap), None)
+            if c is not None:
+                out.append((x0 + a[0] + a[2] / 2.0, b[1] + b[3] / 2.0, float(a[2])))
+                break
+    out.sort(key=lambda t: -t[0])
+    ded = []
+    for t in out:
+        if not any(abs(t[0] - d[0]) < 0.02 * h and abs(t[1] - d[1]) < 0.02 * h for d in ded):
+            ded.append(t)
+    return ded
 
 
 @dataclass
@@ -298,6 +344,9 @@ class Bot:
         self.icon_start = None
         self._icon_src = ""
         self.exit_tried = set()
+        self.burger = []             # ícones de 3 barrinhas achados na imagem (o Worker preenche)
+        self.burger_tried = set()
+        self.last_burger = 0.0
         self.treasures = 0
         self.last_treasure = ""
         self._last_claim_name = ""
@@ -327,6 +376,8 @@ class Bot:
         self.last_exit = 0.0
         self.recap_waits = 0
         self.exit_tried = set()
+        self.burger_tried = set()
+        self.last_burger = 0.0
         self.log("saindo da partida (%s)" % why)
 
     def handle(self, items, w, h, now, seen=""):
@@ -453,9 +504,22 @@ class Bot:
                                 self.menu_debug_done = True
                                 self.want_debug = True
                     return
+                # 3 barrinhas: ícone sem texto, achado na imagem (nunca por posição estimada).
+                # Só depois de abrir o menu com ESC; cada ícone é clicado uma vez por abertura do menu.
+                if self.leave_step >= 1 and self.burger and now - self.last_burger > BURGER_COOLDOWN_S:
+                    for (bx, by, bsz) in self.burger:
+                        key = (int(bx // 15), int(by // 15))
+                        if key in self.burger_tried:
+                            continue
+                        self.burger_tried.add(key)
+                        self.last_burger = now
+                        press(Hit("3 BARRINHAS", bx - bsz / 2, by - bsz / 2, bx + bsz / 2, by + bsz / 2),
+                              "3 barrinhas (achadas na imagem)")
+                        return
                 if now - self.last_menu > MENU_COOLDOWN_S:
                     self.last_menu = now
                     if self.leave_step == 0:
+                        self.burger_tried = set()
                         self.log("tecla: ESC (abre o menu) | lido: %s" % seen)
                         self.io.key(SC_ESC, 0.12)
                         self.leave_step = 1
@@ -933,6 +997,10 @@ class Worker(threading.Thread):
             self.debug_request = False
             self._save_debug(img, raw, scale)
         self.io.origin = (region[0], region[1])
+        try:
+            self.bot.burger = find_hamburgers(img) if self.bot.leaving else []
+        except Exception:
+            self.bot.burger = []
         self.bot.handle(items, w, h, time.time(), seen)
         if self.bot.want_debug:
             self.bot.want_debug = False
@@ -970,6 +1038,10 @@ class Worker(threading.Thread):
                 f.write("tela %dx%d | escala OCR %.2f\n" % (img.shape[1], img.shape[0], scale))
                 for (t, x1, y1, x2, y2) in raw:
                     f.write("%s  [%d,%d,%d,%d]\n" % (t, x1 / scale, y1 / scale, x2 / scale, y2 / scale))
+                try:
+                    f.write("3 barrinhas achadas: %s\n" % [(int(a), int(b)) for a, b, _c in find_hamburgers(img)])
+                except Exception:
+                    pass
             self.log("Debug salvo em: " + base)
         except Exception:
             self.log("falha ao salvar o debug: " + traceback.format_exc().strip().splitlines()[-1])
